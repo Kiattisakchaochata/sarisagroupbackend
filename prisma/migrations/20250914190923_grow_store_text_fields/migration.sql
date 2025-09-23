@@ -1,0 +1,5 @@
+-- AlterTable
+ALTER TABLE `images` ADD COLUMN `menu_name` VARCHAR(191) NULL,
+    ADD COLUMN `price` INTEGER NULL,
+    ADD COLUMN `rating` DOUBLE NULL DEFAULT 0,
+    ADD COLUMN `rating_count` INTEGER NOT NULL DEFAULT 0;

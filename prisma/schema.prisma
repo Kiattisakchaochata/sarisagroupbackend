@@ -1,0 +1,527 @@
+// ----------------------
+// Prisma Core
+// ----------------------
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+// ----------------------
+// Enums
+// ----------------------
+enum Weekday {
+  MON
+  TUE
+  WED
+  THU
+  FRI
+  SAT
+  SUN
+}
+
+enum ReviewStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+// ----------------------
+// Users & Auth
+// ----------------------
+model User {
+  id            String   @id @default(cuid())
+  name          String
+  email         String   @unique
+  password_hash String
+  role          String   @default("user") // admin | editor | user (ใช้ string เพื่อความยืดหยุ่น)
+  created_at    DateTime @default(now())
+  updated_at    DateTime @updatedAt
+
+  reviews       Review[]
+  reviewReplies ReviewReply[]
+  imageRatings   ImageRating[]
+}
+
+// ----------------------
+// Category
+// ----------------------
+model Category {
+  id           String  @id @default(cuid())
+  name         String  @unique
+  slug         String  @unique // NEW: สำหรับ URL สวย/SEO
+  cover_image  String?
+  image_url    String?
+  order_number Int     @unique
+  avg_review   Float   @default(0)
+
+  stores Store[]
+
+  @@index([name])
+  @@index([slug])
+}
+
+// ----------------------
+// Store (ธุรกิจหลัก)
+// ----------------------
+model Store {
+  id              String   @id @default(cuid())
+  name            String   @db.VarChar(120)
+  slug            String   @unique @db.VarChar(160)
+  description     String   @db.Text
+  address         String   @db.Text
+
+  latitude        Float?
+  longitude       Float?
+  phone           String?  @db.VarChar(50)
+  email           String?  @db.VarChar(191)
+  website         String?  @db.VarChar(255)
+  social_links    Json?
+
+  category_id     String
+  order_number    Int
+
+  // รูปภาพ / สถานะ
+  cover_image     String?  @db.VarChar(512)
+  logo_url        String?  @db.VarChar(512)   // ⬅️ เพิ่มฟิลด์นี้
+  is_active       Boolean  @default(true)
+  expired_at      DateTime?
+  created_at      DateTime @default(now())
+  renewal_count   Int      @default(0)
+  updated_at      DateTime @updatedAt
+
+  avg_rating      Float    @default(0)
+  review_count    Int      @default(0)
+
+  meta_title       String? @db.VarChar(255)
+  meta_description String? @db.Text
+  og_image         String? @db.VarChar(512)
+
+  category       Category                   @relation(fields: [category_id], references: [id])
+  images         Image[]
+  reviews        Review[]
+  visitorCounter VisitorCounter?
+  videos         Video[]
+  branches       Branch[]
+  openingHours   OpeningHour[]
+  events         Event[]
+  sustainability SustainabilityTagOnStore[]
+  amenities      AmenityOnStore[]
+
+  @@unique([category_id, order_number])
+  @@index([category_id])
+  @@index([is_active, avg_rating])
+  @@map("stores")
+}
+
+// ----------------------
+// Branch (รองรับหลายสาขา/โลเกชัน)
+// ----------------------
+model Branch {
+  id         String   @id @default(cuid())
+  store_id   String
+  name       String
+  address    String
+  latitude   Float?
+  longitude  Float?
+  phone      String?
+  is_active  Boolean  @default(true)
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  store        Store         @relation(fields: [store_id], references: [id], onDelete: Cascade)
+  openingHours OpeningHour[]
+
+  @@index([store_id, is_active])
+}
+
+// ----------------------
+// Opening Hours (ร้าน/สาขา)
+// ----------------------
+model OpeningHour {
+  id        String  @id @default(cuid())
+  store_id  String?
+  branch_id String?
+  day       Weekday
+  openTime  String // "08:30"
+  closeTime String // "19:00"
+  isOpen    Boolean @default(true)
+
+  store  Store?  @relation(fields: [store_id], references: [id], onDelete: Cascade)
+  branch Branch? @relation(fields: [branch_id], references: [id], onDelete: Cascade)
+
+  @@index([store_id])
+  @@index([branch_id])
+  @@index([day, isOpen])
+}
+
+// ----------------------
+// Reviews (+ moderation & replies)
+// ----------------------
+model Review {
+  id         String       @id @default(cuid())
+  user_id    String
+  store_id   String
+  rating     Int
+  comment    String
+  status     ReviewStatus @default(PENDING) // NEW: moderate ก่อนขึ้นหน้าเว็บ
+  created_at DateTime     @default(now())
+  updated_at DateTime     @updatedAt
+
+  user    User          @relation(fields: [user_id], references: [id])
+  store   Store         @relation(fields: [store_id], references: [id], onDelete: Cascade)
+  replies ReviewReply[]
+
+  @@index([store_id, status])
+  @@index([user_id])
+}
+
+model ReviewReply {
+  id         String   @id @default(cuid())
+  review_id  String
+  user_id    String // แอดมิน/เจ้าของร้านตอบ
+  comment    String
+  created_at DateTime @default(now())
+
+  review Review @relation(fields: [review_id], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [user_id], references: [id])
+
+  @@index([review_id])
+  @@index([user_id])
+}
+
+// ----------------------
+// Images / Gallery
+// ----------------------
+// เพิ่มใน model Image เดิม
+model Image {
+  id                  String   @id @default(cuid())
+  store_id            String
+  image_url           String
+  cloudinary_public_id String?
+  order_number        Int
+  alt_text            String?
+  created_at          DateTime @default(now())
+
+  is_featured_home    Boolean  @default(false)
+  featured_order      Int?
+  allow_review        Boolean  @default(false)  // ✅ ตรงกับที่ใช้ในโค้ด
+
+  menu_name           String?
+  price               Int?
+  rating              Float?   @default(0)
+  rating_count        Int      @default(0)
+  ratings        ImageRating[]
+
+  store Store @relation(fields: [store_id], references: [id], onDelete: Cascade)
+
+  @@unique([store_id, order_number])
+  @@index([store_id])
+  @@index([is_featured_home, featured_order])
+  @@map("images")
+}
+
+// ----------------------
+// Visitor Counters
+// ----------------------
+model VisitorCounter {
+  id        String   @id @default(cuid())
+  total     Int      @default(0)
+  store     Store?   @relation(fields: [storeId], references: [id])
+  storeId   String?  @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model WebsiteVisitorCounter {
+  id    String @id @default("singleton") // fix เป็น single row
+  total Int    @default(0)
+}
+
+// ----------------------
+// Banners
+// ----------------------
+model Banner {
+  id                   String   @id @default(cuid())
+  image_url            String
+  cloudinary_public_id String?
+  title                String?
+  alt_text             String?
+  order                Int      @default(0)
+  href                 String?
+  is_active            Boolean  @default(true)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @default(now()) @updatedAt
+
+  @@index([is_active, order])
+}
+
+// ----------------------
+// Videos (เชื่อมกับร้านได้)
+// ----------------------
+model Video {
+  id            String    @id @default(cuid())
+  title         String
+  youtube_url   String
+  thumbnail_url String?
+  order_number  Int       @default(0)
+  is_active     Boolean   @default(true)
+  start_date    DateTime?
+  end_date      DateTime?
+  created_at    DateTime  @default(now())
+  updated_at    DateTime  @updatedAt
+
+  store_id String?
+  store    Store?  @relation(fields: [store_id], references: [id], onDelete: SetNull)
+
+  @@index([is_active, start_date, end_date])
+  @@index([store_id])
+  @@map("videos")
+}
+
+// ----------------------
+// Sustainability Tags (Many-to-Many)
+// ----------------------
+model SustainabilityTag {
+  id     String                     @id @default(cuid())
+  key    String                     @unique // "solar", "recycle", "localHiring"
+  name   String // ป้ายชื่อภาษาไทย
+  stores SustainabilityTagOnStore[]
+
+  @@index([key])
+}
+
+model SustainabilityTagOnStore {
+  store_id String
+  tag_id   String
+  store    Store             @relation(fields: [store_id], references: [id], onDelete: Cascade)
+  tag      SustainabilityTag @relation(fields: [tag_id], references: [id], onDelete: Cascade)
+
+  @@id([store_id, tag_id])
+  @@index([tag_id])
+}
+
+// ----------------------
+// Amenities (Many-to-Many)
+// ----------------------
+model Amenity {
+  id     String           @id @default(cuid())
+  key    String           @unique // "kidsZone", "freeWifi", "evCharger", "petFriendly"
+  name   String
+  stores AmenityOnStore[]
+
+  @@index([key])
+}
+
+model AmenityOnStore {
+  store_id   String
+  amenity_id String
+  store      Store   @relation(fields: [store_id], references: [id], onDelete: Cascade)
+  amenity    Amenity @relation(fields: [amenity_id], references: [id], onDelete: Cascade)
+
+  @@id([store_id, amenity_id])
+  @@index([amenity_id])
+}
+
+// ----------------------
+// Events / Activities
+// ----------------------
+model Event {
+  id          String    @id @default(cuid())
+  store_id    String
+  title       String
+  description String
+  start_at    DateTime
+  end_at      DateTime?
+  cover_image String?
+  is_active   Boolean   @default(true)
+  created_at  DateTime  @default(now())
+  updated_at  DateTime  @updatedAt
+
+  store Store @relation(fields: [store_id], references: [id], onDelete: Cascade)
+
+  @@index([store_id, start_at, is_active])
+}
+// ----------------------
+// Homepage Settings
+// ----------------------
+enum HomeRowKind {
+  food
+  cafe
+  beauty
+  carcare
+  events
+  videos
+  network
+  custom
+}
+
+model HomeSettings {
+  id            String   @id @default("singleton") // หน้าแรกมีชุดเดียว
+  hero_title    String
+  hero_subtitle String
+  show_search   Boolean  @default(true)
+
+  missions_title String?
+  missions_items Json?      // ตัวอย่าง: ["คุณภาพ", "พลังงานสะอาด", "ช่วยชุมชน"]
+
+  updated_at    DateTime @updatedAt
+}
+
+// แถวคอนเทนต์บนหน้าแรก (เรียงตำแหน่งด้วย order_number)
+model HomeRow {
+  id            String       @id @default(cuid())
+  kind          HomeRowKind
+  title         String
+  cta_text      String?
+  cta_href      String?
+  visible       Boolean      @default(true)
+  order_number  Int          @default(0)
+
+  // อนุญาตเก็บอ้างอิงแบบยืดหยุ่น
+  images        Json?        // เช่น [{url, alt}] ถ้าอยากแยกตารางก็ทำได้
+  store_ids     Json?        // เช่น ["storeId1","storeId2"]
+  video_ids     Json?        // เช่น ["videoId1","videoId2"]
+
+  created_at    DateTime @default(now())
+  updated_at    DateTime @updatedAt
+
+  @@index([kind, visible, order_number])
+}
+// ----------------------
+// Global SEO & Footer
+// ----------------------
+model SiteSeo {
+  id               String   @id @default("global") // ชุดเดียว
+  meta_title       String?
+  meta_description String?
+  keywords         String?  // คั่นด้วยคอมม่า หรือจะเก็บเป็น Json ก็ได้
+  og_image         String?
+  jsonld           Json?    // ยัด structured data schema.org ได้
+
+  updated_at       DateTime @updatedAt
+}
+
+model SiteFooter {
+  id          String   @id @default("singleton")
+  about_text  String?
+  address     String?
+  phone       String?
+  email       String?
+  socials     Json?    // {facebook, line, tiktok, instagram, youtube}
+  links       Json?    // [{label, href}]
+  locations   Json?    // [{label: "ร้านอาหาร", href: "https://maps..."}]
+  hours       Json?    // [{label: "🍜/☕/💄", time: "ทุกวัน 08:00–20:00"}, {label: "🚗 คาร์แคร์", time: "จ–ศ 08:30–18:00"}]
+  updated_at  DateTime @updatedAt
+}
+model Homepage {
+  id            String   @id @default("default") // singleton
+  hero_title    String?
+  hero_subtitle String?
+  missions      Json?    // [{id,title,icon?}]  ← ลิสต์ bullet
+  missions_subtitle String? 
+  rows          Json?    // future use: config แถวต่างๆ
+  updated_at    DateTime @updatedAt
+  created_at    DateTime @default(now())
+
+} 
+model PageSeo {
+  id          String  @id @default(cuid())
+  path        String  @unique         @db.VarChar(255)
+  title       String? @db.VarChar(255)
+  description String? @db.Text
+  og_image    String? @db.VarChar(512)  // main
+  og_images   Json?                      // secondary (array)
+  jsonld      Json?
+  noindex     Boolean @default(false)
+  updated_at  DateTime @updatedAt
+
+  @@index([updated_at])
+}
+enum TrackingProvider {
+  GA4
+  GTM
+  FacebookPixel
+  TikTokPixel
+  Custom
+}
+
+enum ScriptPlacement {
+  HEAD
+  BODY_END
+}
+
+enum ScriptStrategy {
+  afterInteractive
+  lazyOnload
+  worker     // ถ้าอนาคตใช้ Partytown ฯลฯ
+}
+
+model TrackingScript {
+  id         String           @id @default(cuid())
+  provider   TrackingProvider // เดิม: String
+  // ถ้าเป็น GA4/GTM/TikTok/FB — แนะนำเก็บ "id" (เช่น G-XXXX, GTM-XXXX, FB-PIXEL-ID, TIKTOK-PIXEL-ID)
+  trackingId String?          @db.VarChar(64)
+  // สำหรับ custom snippet หรือเคสพิเศษยังคงรองรับ
+  script     String?          @db.Text
+
+  placement  ScriptPlacement  @default(HEAD)
+  strategy   ScriptStrategy   @default(afterInteractive)
+  enabled    Boolean          @default(true)
+
+  createdAt  DateTime         @default(now())
+  updatedAt  DateTime         @updatedAt
+
+  // ถ้าต้องการบังคับว่า “provider ละ 1 รายการที่ active” ให้ใช้ partial unique index แยกในแอป
+  @@index([provider, enabled])
+}
+model ImageRating {
+  id         String   @id @default(cuid())
+  image_id   String
+  user_id    String
+  rating     Int                      // 1..5
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  // relations
+  image Image @relation(fields: [image_id], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  // หนึ่งผู้ใช้ให้ดาวรูปเดียวได้ครั้งเดียว
+  @@unique([image_id, user_id])
+
+  // ช่วยให้ query เร็ว
+  @@index([image_id])
+  @@index([user_id])
+
+  // ชื่อจริงในฐานข้อมูล (ไม่จำเป็น แต่ทำให้ชัด)
+  @@map("image_ratings")
+}
+model SiteContact {
+  id          String   @id @default(cuid())        // << เดิม "singleton" → ใช้ cuid()
+  store_name  String?  @db.VarChar(191)
+  phone       String?  @db.VarChar(64)
+  email       String?  @db.VarChar(191)
+  facebook    String?  @db.VarChar(512)
+  messenger   String?  @db.VarChar(512)
+  line        String?  @db.VarChar(512)
+  address     String?  @db.Text
+  map_iframe  String?  @db.Text
+  socials     Json?
+  is_active   Boolean  @default(true)              // << new
+  order_number Int     @default(0)                 // << new
+  updated_at  DateTime @updatedAt
+  created_at  DateTime @default(now())
+
+  @@index([is_active, order_number])
+}
+model SiteConfig {
+  id                  String   @id @default("singleton") // มีแถวเดียว
+  allow_user_login    Boolean  @default(false)           // ⬅️ false = อนุญาตเฉพาะ admin เข้าระบบ
+  maintenance_mode    Boolean  @default(false)           // ⬅️ เปิดโหมดปิดปรับปรุงทั้งเว็บ
+  maintenance_message String?  @db.VarChar(255)          // ข้อความขึ้นหน้า Maintenance (ถ้ามี)
+  updated_at          DateTime @updatedAt
+  created_at          DateTime @default(now())
+}
