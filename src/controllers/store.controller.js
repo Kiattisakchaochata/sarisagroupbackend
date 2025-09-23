@@ -545,25 +545,52 @@ export const uploadImages = async (req, res, next) => {
 /* ============================== SEARCH =========================== */
 export const searchStore = async (req, res, next) => {
   try {
-    let { q } = req.query;
-    if (!q) return res.status(400).json({ message: 'กรุณาระบุคำค้นหา เช่น ?q=อาหาร' });
+    const raw = (req.query.q ?? '').toString().trim();
+    if (raw.length < 2) return res.json({ stores: [] });
 
-    q = String(q).trim().toLowerCase();
+    // คำพ้องความหมายแบบง่าย ๆ
+    const SYNO = {
+      'ล้างรถ': ['คาร์แคร์', 'car wash', 'carwash', 'car care'],
+      'คาร์แคร์': ['ล้างรถ', 'car wash', 'carwash', 'car care'],
+      'ขนม': ['ของหวาน', 'เบเกอรี่', 'bakery', 'dessert', 'เค้ก', 'โดนัท', 'คุกกี้'],
+      'ของหวาน': ['ขนม', 'เบเกอรี่', 'dessert', 'เค้ก', 'bakery'],
+      'กาแฟ': ['คาเฟ่', 'coffee', 'ร้านกาแฟ', 'เบเกอรี่'],
+      // เพิ่มได้ตามต้องการ
+    };
+
+    // แตกคำตามช่องว่าง + ใส่คำพ้อง
+    const baseTerms = raw.split(/\s+/).filter(Boolean);
+    const expanded = new Set(baseTerms);
+    for (const term of baseTerms) {
+      (SYNO[term] || []).forEach((s) => expanded.add(s));
+    }
+    // เผื่อคนพิมพ์คำเดี่ยว ๆ
+    (SYNO[raw] || []).forEach((s) => expanded.add(s));
+
+    const terms = Array.from(expanded);
+
+    // สร้าง where.OR จากทุก term กับทุกฟิลด์ที่สนใจ
+    const OR = [];
+    for (const t of terms) {
+      OR.push(
+        { name:        { contains: t } },
+        { description: { contains: t } },
+        { category: { is: { name: { contains: t } } } },
+        { images: { some: { menu_name: { contains: t } } } },
+        { images: { some: { alt_text:  { contains: t } } } },
+      );
+    }
 
     const stores = await prisma.store.findMany({
+      where: { is_active: true, OR },
       include: { category: true, images: true, reviews: true },
       orderBy: { created_at: 'desc' },
+      take: 50,
     });
 
-    const filtered = stores.filter((store) => {
-      const nameMatch = store.name?.toLowerCase().includes(q);
-      const descMatch = store.description?.toLowerCase().includes(q);
-      const categoryMatch = store.category?.name?.toLowerCase().includes(q);
-      return nameMatch || descMatch || categoryMatch;
-    });
-
-    res.json({ stores: filtered });
+    res.json({ stores });
   } catch (err) {
+    console.error('searchStore error:', err);
     next(err);
   }
 };

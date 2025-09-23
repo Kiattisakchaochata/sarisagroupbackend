@@ -2,4 +2,9 @@ node_modules/
 .env
 temp-pic/*
 !temp-pic/.gitkeep
-/src/generated/prisma
+/src/generated/prismanode_modules/
+.env
+.env.local
+.next/
+dist/
+coverage/
