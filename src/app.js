@@ -38,7 +38,6 @@ import publicTrackingRoutes from './routes/public/tracking.public.routes.js';
 import publicContactRoutes from './routes/public/contact.routes.js';
 import adminContactRoutes from './routes/admin/contact.routes.js';
 
-
 // ✅ NEW: เส้นทางให้ดาวรูป (image ratings)
 import imageRatingRoutes from './routes/image-rating.route.js';
 
@@ -47,17 +46,45 @@ import { authenticate, requireAdmin } from './middlewares/auth.middleware.js';
 
 const app = express();
 
-// CORS allow-list
-const ALLOWED_ORIGINS = [
+/** -------------- CORS (ปรับเฉพาะส่วนนี้) -------------- */
+// อ่าน origin จาก ENV แบบ comma-separated เช่น: 
+// CORS_ORIGIN="https://sarisagroup.com,https://www.sarisagroup.com"
+const ENV_ORIGINS = (process.env.CORS_ORIGIN || '')
+  .split(',')
+  .map(s => s.trim())
+  .filter(Boolean);
+
+// origin พื้นฐานที่ใช้บ่อยตอนพัฒนา
+const STATIC_ORIGINS = [
   'http://localhost:3000',
   'http://localhost:5173',
   'http://localhost:5174',
-  process.env.CORS_ORIGIN,
-].filter(Boolean);
+];
+
+// รวมทั้งหมดเป็น allow-list
+const ALLOWED_ORIGINS = [...STATIC_ORIGINS, ...ENV_ORIGINS];
+
+// เพิ่ม trust proxy เพื่อให้ cookie Secure/Behind Nginx ทำงานถูกต้อง
+app.set('trust proxy', 1);
 
 const corsOptions = {
   origin(origin, callback) {
-    if (!origin || ALLOWED_ORIGINS.includes(origin)) return callback(null, true);
+    // อนุญาต request ที่ไม่มี Origin (เช่น curl/เซิร์ฟเวอร์เรียกเอง)
+    if (!origin) return callback(null, true);
+
+    // ตรวจ exact match ใน allow-list
+    if (ALLOWED_ORIGINS.includes(origin)) return callback(null, true);
+
+    // เผื่อเคส www/non-www ของโดเมนหลัก
+    const alt =
+      origin === 'https://sarisagroup.com'
+        ? 'https://www.sarisagroup.com'
+        : origin === 'https://www.sarisagroup.com'
+        ? 'https://sarisagroup.com'
+        : null;
+
+    if (alt && ALLOWED_ORIGINS.includes(alt)) return callback(null, true);
+
     return callback(new Error(`Not allowed by CORS: ${origin}`));
   },
   credentials: true,
@@ -67,6 +94,7 @@ const corsOptions = {
 
 app.use(cors(corsOptions));
 app.options('*', cors(corsOptions));
+/** -------------- จบส่วนที่ปรับ -------------- */
 
 app.use(cookieParser());
 app.use(express.json());
