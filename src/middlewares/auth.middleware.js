@@ -1,4 +1,3 @@
-// src/middlewares/auth.middleware.js
 import jwt from 'jsonwebtoken';
 import prisma from '../config/prisma.config.js';
 
@@ -48,6 +47,34 @@ export const authenticate = async (req, res, next) => {
     next();
   } catch {
     return res.status(401).json({ message: 'Token ไม่ถูกต้องหรือหมดอายุ' });
+  }
+};
+
+// ✅ ใหม่: ใช้สำหรับเส้นที่ "ไม่ล็อกอินก็ได้"
+export const authenticateOptional = async (req, _res, next) => {
+  try {
+    const token = readTokenFromReq(req);
+    if (!token) {
+      req.user = null; // ไม่มี token = ผู้ใช้ guest
+      return next();
+    }
+
+    const decoded = jwt.verify(token, JWT_SECRET);
+    if (!decoded?.id) {
+      req.user = null;
+      return next();
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { id: decoded.id },
+      select: { id: true, name: true, email: true, role: true },
+    });
+
+    req.user = user || null;
+    return next();
+  } catch {
+    req.user = null;
+    return next();
   }
 };
 
@@ -101,4 +128,4 @@ export const maintenanceGate = (opts = {}) => {
 };
 
 // ✅ เผื่อที่อื่น import แบบ default
-export default { authenticate, requireRole, requireAdmin, maintenanceGate };
+export default { authenticate, authenticateOptional, requireRole, requireAdmin, maintenanceGate };

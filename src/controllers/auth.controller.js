@@ -13,6 +13,29 @@ function signToken(payload) {
   return jwt.sign(payload, JWT_SECRET, { expiresIn: '7d' })
 }
 
+// 🔸 helper: พยายามอ่าน user จาก cookie/Authorization (ถ้าไม่มี ให้คืน null)
+async function tryResolveUser(req) {
+  try {
+    const bearer = (req.headers.authorization || '').trim()
+    const headerToken = bearer.startsWith('Bearer ') ? bearer.slice(7) : null
+    const cookieToken = req.cookies?.[AUTH_COOKIE] || null
+    const token = headerToken || cookieToken
+    if (!token) return null
+
+    const decoded = jwt.verify(token, JWT_SECRET)
+    if (!decoded?.id) return null
+
+    const user = await prisma.user.findUnique({
+      where: { id: decoded.id },
+      select: { id: true, name: true, email: true, role: true }
+    })
+    return user || null
+  } catch (_e) {
+    // token ผิด/หมดอายุ → ถือว่าไม่ล็อกอิน
+    return null
+  }
+}
+
 // POST /api/auth/register
 export const register = async (req, res, next) => {
   try {
@@ -83,12 +106,17 @@ export const login = async (req, res, next) => {
   }
 }
 
-// GET /api/auth/me (ต้องผ่าน authenticate middleware ก่อน)
+// GET /api/auth/me
+// ❗ เปลี่ยนให้ "ปลอดภัยต่อผู้ที่ยังไม่ล็อกอิน": ถ้าไม่พบ user → ตอบ 200 พร้อมค่า null
 export const getMe = async (req, res, next) => {
   try {
-    res.json(req.user)
+    // ใช้ข้อมูลจาก middleware ถ้ามี; ถ้าไม่มีลองถอด token เองแบบเบา ๆ
+    const userFromMiddleware = req.user ?? null
+    const user = userFromMiddleware || (await tryResolveUser(req))
+    return res.status(200).json(user || null)
   } catch (err) {
-    next(err)
+    // แม้เกิด error ในการถอด token ก็อย่าตอบ 401 — ให้ถือว่า "ยังไม่ล็อกอิน"
+    return res.status(200).json(null)
   }
 }
 
