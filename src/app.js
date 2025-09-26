@@ -39,6 +39,7 @@ import adminTrackingRoutes from './routes/admin/tracking.admin.routes.js';
 import publicTrackingRoutes from './routes/public/tracking.public.routes.js';
 import publicContactRoutes from './routes/public/contact.routes.js';
 import adminContactRoutes from './routes/admin/contact.routes.js';
+import publicSeoRoutes from './routes/public/seo.public.route.js';
 
 // ✅ NEW: เส้นทางให้ดาวรูป (image ratings)
 import imageRatingRoutes from './routes/image-rating.route.js';
@@ -140,6 +141,7 @@ app.use('/api/footer', publicFooterRoute);
 app.use('/api', publicTrackingRoutes);
 app.use('/api', publicContactRoutes);
 app.use('/api', publicBrandRoutes);
+app.use('/api/public/seo', publicSeoRoutes);
 
 // Ratings
 app.use('/api/ratings', imageRatingRoutes);

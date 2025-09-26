@@ -67,3 +67,29 @@ export async function deletePageSeo(req, res) {
   await prisma.pageSeo.delete({ where: { id } });
   res.json({ ok: true });
 }
+
+/* ---------- Public SEO API (read-only, no auth) ---------- */
+export async function getSitePublic() {
+  const site = await prisma.siteSeo.findUnique({ where: { id: 'global' } });
+  if (!site) return {};
+  return {
+    title: site.meta_title,
+    description: site.meta_description,
+    keywords: site.keywords,
+    ogImage: site.og_image,
+    jsonld: site.jsonld,
+  };
+}
+
+export async function getPagePublic(path) {
+  const norm = normPath(path);
+  const page = await prisma.pageSeo.findUnique({ where: { path: norm } });
+  if (!page) return null;
+  return {
+    title: page.title,
+    description: page.description,
+    ogImage: page.og_image,
+    jsonld: page.jsonld,
+    noindex: page.noindex,
+  };
+}
