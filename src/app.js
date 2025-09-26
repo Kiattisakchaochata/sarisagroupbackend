@@ -15,6 +15,8 @@ import visitorRoutes from './routes/visitor.routes.js';
 import { startCronJobs } from './cron.js';
 
 import seoAdminRoutes from './routes/admin/seo.routes.js';
+import adminBrandRoutes from './routes/admin/brand.admin.routes.js';
+import publicBrandRoutes from './routes/public/brand.public.routes.js';
 
 import bannerRoute from './routes/admin/banner.routes.js';
 import publicBannerRoute from './routes/public/banner.public.routes.js';
@@ -44,38 +46,32 @@ import imageRatingRoutes from './routes/image-rating.route.js';
 // ✅ NEW: นำ middleware เข้ามาใช้งาน (ต้อง import requireAdmin ด้วย)
 import { authenticate, requireAdmin } from './middlewares/auth.middleware.js';
 
+// ✅ NEW: middleware สำหรับ SEO ที่ยอมรับ Service Token
+import { authSeoAdmin } from './middlewares/authSeoAdmin.js';
+
 const app = express();
 
 /** -------------- CORS (ปรับเฉพาะส่วนนี้) -------------- */
-// อ่าน origin จาก ENV แบบ comma-separated เช่น: 
-// CORS_ORIGIN="https://sarisagroup.com,https://www.sarisagroup.com"
 const ENV_ORIGINS = (process.env.CORS_ORIGIN || '')
   .split(',')
   .map(s => s.trim())
   .filter(Boolean);
 
-// origin พื้นฐานที่ใช้บ่อยตอนพัฒนา
 const STATIC_ORIGINS = [
   'http://localhost:3000',
   'http://localhost:5173',
   'http://localhost:5174',
 ];
 
-// รวมทั้งหมดเป็น allow-list
 const ALLOWED_ORIGINS = [...STATIC_ORIGINS, ...ENV_ORIGINS];
 
-// เพิ่ม trust proxy เพื่อให้ cookie Secure/Behind Nginx ทำงานถูกต้อง
 app.set('trust proxy', 1);
 
 const corsOptions = {
   origin(origin, callback) {
-    // อนุญาต request ที่ไม่มี Origin (เช่น curl/เซิร์ฟเวอร์เรียกเอง)
     if (!origin) return callback(null, true);
-
-    // ตรวจ exact match ใน allow-list
     if (ALLOWED_ORIGINS.includes(origin)) return callback(null, true);
 
-    // เผื่อเคส www/non-www ของโดเมนหลัก
     const alt =
       origin === 'https://sarisagroup.com'
         ? 'https://www.sarisagroup.com'
@@ -84,7 +80,6 @@ const corsOptions = {
         : null;
 
     if (alt && ALLOWED_ORIGINS.includes(alt)) return callback(null, true);
-
     return callback(new Error(`Not allowed by CORS: ${origin}`));
   },
   credentials: true,
@@ -103,7 +98,11 @@ app.use(express.urlencoded({ extended: true }));
 // ✅ Health
 app.get('/api/health', (_req, res) => res.json({ ok: true }));
 
-/* ---------------- Admin guard (ต้องมาก่อนเมานต์ /api/admin/* เสมอ) ---------------- */
+/* ---------------- SEO admin routes (ALLOW: Service Token or JWT admin) ---------------- */
+// ❗ เมานต์ “ก่อน” guard รวม /api/admin
+app.use('/api/admin/seo', authSeoAdmin, seoAdminRoutes);
+
+/* ---------------- Admin guard (ต้องมาก่อนเมานต์ /api/admin/* อื่น ๆ) ---------------- */
 app.use('/api/admin', authenticate, requireAdmin);
 
 /* ---------------- Admin routes (ถูกป้องกันทั้งหมดด้วย guard ด้านบน) ---------------- */
@@ -119,22 +118,17 @@ app.use('/api/admin/events', adminEventRoute);
 app.use('/api/admin/footer', adminFooterRoute);
 app.use('/api/admin/tracking', adminTrackingRoutes);
 app.use('/api/admin/videos', videoAdminRoute);
-
-// ✅ วางเส้นนี้ไว้ “ก่อน” adminRouter เพื่อให้ /api/admin/seo/* ชัดเจนและไม่ชน
-app.use('/api/admin/seo', seoAdminRoutes);
+app.use('/api/admin/brand', adminBrandRoutes);
 
 // อื่นๆ ภายใต้ /api/admin (ตรวจให้แน่ใจว่าไม่มี route /seo ซ้ำในไฟล์นี้)
 app.use('/api/admin', adminContactRoutes);
-app.use('/api/admin', adminRouter); // ถ้ายังมี endpoint อื่น ๆ รวมอยู่
+app.use('/api/admin', adminRouter);
 
 /* ---------------- Public routes ---------------- */
 app.use('/api/auth', authRoute);
 app.use('/api/reviews', reviewRoutes);
 app.use('/api/banners', publicBannerRoute);
-
-// ✅ เมานต์ public stores แค่จุดเดียวที่ path ถูกต้อง
 app.use('/api/stores', publicStoreRoutes);
-
 app.use('/api/categories', publicCategoryRoutes);
 app.use('/api/visitor', visitorRoutes);
 app.use('/api/videos', publicVideoRoutes);
@@ -145,6 +139,7 @@ app.use('/api/events', publicEventRoute);
 app.use('/api/footer', publicFooterRoute);
 app.use('/api', publicTrackingRoutes);
 app.use('/api', publicContactRoutes);
+app.use('/api', publicBrandRoutes);
 
 // Ratings
 app.use('/api/ratings', imageRatingRoutes);

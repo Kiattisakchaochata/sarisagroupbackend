@@ -5,6 +5,31 @@ import bcrypt from 'bcryptjs'
 
 const prisma = new PrismaClient()
 
+async function upsertSiteBrand() {
+  await prisma.siteBrand.upsert({
+    where: { id: 'singleton' },
+    update: {
+      brandName:  'ครัวคุณจี๊ด',
+      themeColor: '#000000',
+      manifestUrl: '/favicon/site.webmanifest',
+      icon16:  '/favicon/favicon-16x16.png',
+      icon32:  '/favicon/favicon-32x32.png',
+      apple180: '/favicon/apple-touch-icon.png',
+      ogDefault: '/og-default.png',
+    },
+    create: {
+      id: 'singleton',
+      brandName:  'ครัวคุณจี๊ด',
+      themeColor: '#000000',
+      manifestUrl: '/favicon/site.webmanifest',
+      icon16:  '/favicon/favicon-16x16.png',
+      icon32:  '/favicon/favicon-32x32.png',
+      apple180: '/favicon/apple-touch-icon.png',
+      ogDefault: '/og-default.png',
+    },
+  })
+}
+
 async function upsertAdmin() {
   const passwordHash = await bcrypt.hash('admin123', 10)
   const admin = await prisma.user.upsert({
@@ -292,6 +317,7 @@ async function seedHomepage() {
 }
 
 async function main() {
+  await upsertSiteBrand() 
   const admin = await upsertAdmin()
   const catMap = await upsertCategories()
   const stores = await seedStores(catMap)

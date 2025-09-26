@@ -525,3 +525,25 @@ model SiteConfig {
   updated_at          DateTime @updatedAt
   created_at          DateTime @default(now())
 }
+model SiteBrand {
+  id             String   @id @default("singleton")
+  brandName      String?  // ชื่อแบรนด์หลัก เช่น "ครัวคุณจี๊ด"
+  themeColor     String?  // hex เช่น #000000
+  manifestUrl    String?  // /site.webmanifest หรือ URL
+  // favicon & apple-icon
+  icon16         String?  // /favicon/favicon-16x16.png
+  icon32         String?  // /favicon/favicon-32x32.png
+  apple57        String?
+  apple60        String?
+  apple72        String?
+  apple76        String?
+  apple114       String?
+  apple120       String?
+  apple144       String?
+  apple152       String?
+  apple180       String?
+  // OG default
+  ogDefault      String?  // /og-default.png (1200x630)
+  updatedAt      DateTime @updatedAt
+  createdAt      DateTime @default(now())
+}
