@@ -85,6 +85,7 @@ model Store {
 
   // รูปภาพ / สถานะ
   cover_image     String?  @db.VarChar(512)
+  image_fit       String   @default("cover") @db.VarChar(20)
   logo_url        String?  @db.VarChar(512)   // ⬅️ เพิ่มฟิลด์นี้
   is_active       Boolean  @default(true)
   expired_at      DateTime?

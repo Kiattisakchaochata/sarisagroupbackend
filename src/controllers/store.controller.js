@@ -125,6 +125,7 @@ export const createStore = async (req, res, next) => {
         cover_image: coverImageUrl,
         expired_at: expired_at ? new Date(expired_at) : null,
         is_active: true,
+        image_fit: (req.body.image_fit === 'contain') ? 'contain' : 'cover',
       },
       select: { id: true },
     });
@@ -162,7 +163,7 @@ export const createStore = async (req, res, next) => {
 
     // ❺ คืนค่า
     const storeWithImages = await prisma.store.findUnique({
-      where: { id: store.id },
+       where: { id: store.id },
       include: { images: true, category: true },
     });
 
@@ -191,6 +192,7 @@ export const getAllStores = async (_req, res, next) => {
         updated_at: true,
         expired_at: true,
         cover_image: true,
+        image_fit: true,
         category: true,
         images: true,
         reviews: true,
@@ -226,6 +228,7 @@ export const getStoreById = async (req, res, next) => {
         category_id: true,
         order_number: true,
         cover_image: true,
+        image_fit: true,
         created_at: true,
         updated_at: true,
         expired_at: true,
@@ -395,7 +398,9 @@ export const updateStore = async (req, res, next) => {
       if (coverImageUrl) data.cover_image = coverImageUrl;
       if (newOrder !== null) data.order_number = newOrder;
       if (expired_at !== undefined) data.expired_at = expired_at ? new Date(expired_at) : null;
-
+      if (req.body?.image_fit === 'contain' || req.body?.image_fit === 'cover') {
+      data.image_fit = req.body.image_fit;
+     }
       if (newOrder === null && __effectiveOrderToApply !== null) {
         data.order_number = __effectiveOrderToApply;
       }
@@ -1098,6 +1103,7 @@ export const getStoreBySlug = async (req, res, next) => {
         phone: true,
         meta_title: true,
         meta_description: true,
+        image_fit: true,
         category: { select: { id: true, name: true, slug: true } },
         images: {
           orderBy: { order_number: 'asc' },

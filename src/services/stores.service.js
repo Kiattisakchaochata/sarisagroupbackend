@@ -9,6 +9,7 @@ export const listStores = async () => {
       images: { orderBy: { order_number: "asc" } },
       category: true,
     },
+    select: undefined,
   });
 };
 
