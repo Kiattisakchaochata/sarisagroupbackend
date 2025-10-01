@@ -5,6 +5,25 @@ import fs from 'fs/promises';
 import { normalizeSocialLinks } from '../utils/social-links.util.js';
 import { toSlug } from '../utils/slug.util.js';
 
+// ---- LENGTH LIMITS (ตาม Prisma) ----
+const LIMITS = {
+  name: 120,
+  slug: 160,
+  description: 255,
+  address: 255,
+  phone: 50,
+  meta_title: 255,
+  meta_description: 255,
+  alt_text: 255,
+  menu_name: 255,
+};
+
+// ดักความยาวให้รวมศูนย์
+function pushIfTooLong(label, val, max, errors) {
+  if (val === undefined || val === null) return;
+  const s = String(val);
+  if (s.length > max) errors.push(`${label}: ยาว ${s.length} ตัวอักษร (เกิน ${max})`);
+}
 /* ----------------------------- helpers ----------------------------- */
 function toIntOrNull(v) {
   if (v === undefined || v === null || v === '') return null;
@@ -79,6 +98,23 @@ export const createStore = async (req, res, next) => {
     if (!name || !catId) {
       return res.status(400).json({ message: 'กรุณาระบุชื่อร้าน' });
     }
+
+    {
+  const vErrors = [];
+  pushIfTooLong('ชื่อร้าน (name)', name, LIMITS.name, vErrors);
+  pushIfTooLong('Slug', safeSlug, LIMITS.slug, vErrors);
+  pushIfTooLong('คำอธิบาย (description)', description, LIMITS.description, vErrors);
+  pushIfTooLong('ที่อยู่ (address)', address, LIMITS.address, vErrors);
+  pushIfTooLong('โทรศัพท์ (phone)', phone, LIMITS.phone, vErrors);
+  pushIfTooLong('Meta Title', meta_title, LIMITS.meta_title, vErrors);
+  pushIfTooLong('Meta Description', meta_description, LIMITS.meta_description, vErrors);
+  if (vErrors.length) {
+    return res.status(400).json({
+      message: 'มีฟิลด์เกินความยาวที่กำหนด',
+      errors: vErrors,
+    });
+  }
+}
 
     // ❶ คำนวณลำดับ
     let desiredOrder = Number(order_number);
@@ -285,7 +321,27 @@ export const updateStore = async (req, res, next) => {
       expired_at,
       is_active,
     } = req.body;
+/* >>> ADD THIS BLOCK <<< */
+{
+  const vErrors = [];
+  if (name !== undefined)            pushIfTooLong('ชื่อร้าน (name)', name, LIMITS.name, vErrors);
+  if (slug !== undefined && slug !== '') {
+    const _slug = toSlug(slug);
+    pushIfTooLong('Slug', _slug, LIMITS.slug, vErrors);
+  }
+  if (description !== undefined)     pushIfTooLong('คำอธิบาย (description)', description, LIMITS.description, vErrors);
+  if (address !== undefined)         pushIfTooLong('ที่อยู่ (address)', address, LIMITS.address, vErrors);
+  if (phone !== undefined)           pushIfTooLong('โทรศัพท์ (phone)', phone, LIMITS.phone, vErrors);
+  if (meta_title !== undefined)      pushIfTooLong('Meta Title', meta_title, LIMITS.meta_title, vErrors);
+  if (meta_description !== undefined)pushIfTooLong('Meta Description', meta_description, LIMITS.meta_description, vErrors);
 
+  if (vErrors.length) {
+    return res.status(400).json({
+      message: 'มีฟิลด์เกินความยาวที่กำหนด',
+      errors: vErrors,
+    });
+  }
+}
     if (category_id) {
       const categoryExists = await prisma.category.findUnique({ where: { id: category_id } });
       if (!categoryExists) return res.status(400).json({ message: 'ไม่พบ category ที่ระบุ' });
@@ -629,7 +685,19 @@ export const updateImageMeta = async (req, res, next) => {
     // ตรวจว่ารูปมีอยู่จริงก่อน (กัน Prisma 500 เวลา id ไม่พบ)
     const exists = await prisma.image.findUnique({ where: { id: imageId }, select: { id: true } });
     if (!exists) return res.status(404).json({ message: 'ไม่พบบันทึกรูปภาพที่ต้องการอัปเดต' });
+/* >>> ADD THIS BLOCK <<< */
+{
+  const vErrors = [];
+  if (menu_name !== undefined) pushIfTooLong('ชื่อเมนู (menu_name)', menu_name, LIMITS.menu_name, vErrors);
+  if (alt_text  !== undefined) pushIfTooLong('Alt text', alt_text, LIMITS.alt_text, vErrors);
 
+  if (vErrors.length) {
+    return res.status(400).json({
+      message: 'มีฟิลด์เกินความยาวที่กำหนด',
+      errors: vErrors,
+    });
+  }
+}
     const data = {};
 
     // string fields
@@ -689,7 +757,14 @@ export const bulkUpdateStoreImages = async (req, res, next) => {
           errors.push({ id: null, message: 'missing image id' });
           continue;
         }
-
+/* >>> ADD INSIDE THE for (const img of payload) LOOP, before building data <<< */
+const vErrors = [];
+pushIfTooLong('ชื่อเมนู (menu_name)', img.menu_name, LIMITS.menu_name, vErrors);
+pushIfTooLong('Alt text', img.alt_text, LIMITS.alt_text, vErrors);
+if (vErrors.length) {
+  errors.push({ id: img?.id || null, message: vErrors.join('; ') });
+  continue;
+}
         const data = {};
 
         if (img.menu_name !== undefined) data.menu_name = img.menu_name || null;

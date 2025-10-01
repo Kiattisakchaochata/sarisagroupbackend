@@ -15,6 +15,23 @@ function normPath(p) {
   return s;
 }
 
+/* ====== เพิ่มคอนสแตนต์และ util สำหรับ keywords ====== */
+const KEYWORDS_MAX = 512; // ✅ ตามที่ตกลงกัน
+function normalizeKeywords(v) {
+  if (!v) return '';
+  return String(v)
+    .split(',')
+    .map(s => s.trim())
+    .filter(Boolean)
+    .join(', ');
+}
+
+/** (ยังคงไว้เผื่อ reuse อื่น ๆ ถ้าต้องการ) */
+function clamp(str, max) {
+  if (!str) return '';
+  return String(str).slice(0, max);
+}
+
 // ----- Global (SiteSeo) -----
 export async function getSiteSeo(req, res) {
   const site = await prisma.siteSeo.findUnique({ where: { id: 'global' } });
@@ -22,15 +39,44 @@ export async function getSiteSeo(req, res) {
 }
 
 export async function upsertSiteSeo(req, res) {
-  const { meta_title, meta_description, keywords, og_image, jsonld } = req.body ?? {};
-  const jsonldParsed = safeParseJson(jsonld);
+  try {
+    const { meta_title, meta_description, keywords, og_image, jsonld } = req.body ?? {};
+    const jsonldParsed = safeParseJson(jsonld) || {};
 
-  const data = await prisma.siteSeo.upsert({
-    where: { id: 'global' },
-    create: { id: 'global', meta_title, meta_description, keywords, og_image, jsonld: jsonldParsed },
-    update: {           meta_title, meta_description, keywords, og_image, jsonld: jsonldParsed },
-  });
-  res.json(data);
+    // ✅ ทำให้ keywords เป็นรูปแบบมาตรฐานก่อน
+    const normalized = normalizeKeywords(keywords);
+
+    // ✅ ป้องกันความยาวเกิน 512 ตัวอักษร — ตอบ 400 ทันที (ชัดเจนกว่าปล่อยให้ชน DB)
+    if (normalized && normalized.length > KEYWORDS_MAX) {
+      return res.status(400).json({
+        error: 'KEYWORDS_TOO_LONG',
+        message: `keywords ยาวเกินกำหนด (สูงสุด ${KEYWORDS_MAX} ตัวอักษร รวมจุลภาคและช่องว่าง)`,
+      });
+    }
+
+    // ✅ sync ลง jsonld ด้วย (ถ้ามี)
+    if (typeof jsonldParsed === 'object' && jsonldParsed) {
+      if (normalized) jsonldParsed.keywords = normalized;
+      // ไม่แก้ไขฟิลด์อื่น ๆ
+    }
+
+    const data = await prisma.siteSeo.upsert({
+      where: { id: 'global' },
+      create: { id: 'global', meta_title, meta_description, keywords: normalized, og_image, jsonld: jsonldParsed },
+      update: {           meta_title, meta_description, keywords: normalized, og_image, jsonld: jsonldParsed },
+    });
+    res.json(data);
+  } catch (err) {
+    // ดัก Prisma P2000 เผื่อสคีมายังเป็นความยาวสั้นกว่า (กันเว็บล่ม)
+    if (err?.code === 'P2000' && err?.meta?.column_name === 'keywords') {
+      return res.status(400).json({
+        error: 'KEYWORDS_TOO_LONG',
+        message: `keywords ยาวเกินกำหนด (สูงสุด ${KEYWORDS_MAX} ตัวอักษร รวมจุลภาคและช่องว่าง)`,
+      });
+    }
+    // อื่น ๆ ส่ง 500 กลับไป
+    return res.status(500).json({ error: 'INTERNAL_ERROR', message: err?.message || 'Unexpected error' });
+  }
 }
 
 // ----- Per Page (PageSeo) -----

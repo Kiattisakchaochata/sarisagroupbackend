@@ -33,7 +33,7 @@ enum ReviewStatus {
 // ----------------------
 model User {
   id            String   @id @default(cuid())
-  name          String
+  name          String    @db.VarChar(191)
   email         String   @unique
   password_hash String
   role          String   @default("user") // admin | editor | user (ใช้ string เพื่อความยืดหยุ่น)
@@ -50,8 +50,8 @@ model User {
 // ----------------------
 model Category {
   id           String  @id @default(cuid())
-  name         String  @unique
-  slug         String  @unique // NEW: สำหรับ URL สวย/SEO
+  name         String  @unique @db.VarChar(160)
+  slug String   @unique @db.VarChar(160) // NEW: สำหรับ URL สวย/SEO
   cover_image  String?
   image_url    String?
   order_number Int     @unique
@@ -71,7 +71,7 @@ model Store {
   name            String   @db.VarChar(120)
   slug            String   @unique @db.VarChar(160)
   description     String   @db.Text
-  address         String   @db.Text
+  address         String   @db.VarChar(255)
 
   latitude        Float?
   longitude       Float?
@@ -97,7 +97,7 @@ model Store {
   review_count    Int      @default(0)
 
   meta_title       String? @db.VarChar(255)
-  meta_description String? @db.Text
+  meta_description String? @db.VarChar(255)
   og_image         String? @db.VarChar(512)
 
   category       Category                   @relation(fields: [category_id], references: [id])
@@ -123,11 +123,11 @@ model Store {
 model Branch {
   id         String   @id @default(cuid())
   store_id   String
-  name       String
-  address    String
+  name       String   @db.VarChar(120)
+  address    String   @db.VarChar(255)
   latitude   Float?
   longitude  Float?
-  phone      String?
+  phone      String? @db.VarChar(50)
   is_active  Boolean  @default(true)
   created_at DateTime @default(now())
   updated_at DateTime @updatedAt
@@ -146,8 +146,8 @@ model OpeningHour {
   store_id  String?
   branch_id String?
   day       Weekday
-  openTime  String // "08:30"
-  closeTime String // "19:00"
+  openTime  String   @db.VarChar(8) // "08:30"
+  closeTime String     @db.VarChar(8) // "19:00"
   isOpen    Boolean @default(true)
 
   store  Store?  @relation(fields: [store_id], references: [id], onDelete: Cascade)
@@ -203,14 +203,14 @@ model Image {
   image_url           String
   cloudinary_public_id String?
   order_number        Int
-  alt_text            String?
+  alt_text            String? @db.VarChar(255)
   created_at          DateTime @default(now())
 
   is_featured_home    Boolean  @default(false)
   featured_order      Int?
   allow_review        Boolean  @default(false)  // ✅ ตรงกับที่ใช้ในโค้ด
 
-  menu_name           String?
+  menu_name           String? @db.VarChar(255)
   price               Int?
   rating              Float?   @default(0)
   rating_count        Int      @default(0)
@@ -248,10 +248,10 @@ model Banner {
   id                   String   @id @default(cuid())
   image_url            String
   cloudinary_public_id String?
-  title                String?
-  alt_text             String?
+  title                String? @db.VarChar(255)
+  alt_text             String? @db.VarChar(255)
   order                Int      @default(0)
-  href                 String?
+  href                 String? @db.VarChar(255)
   is_active            Boolean  @default(true)
   createdAt            DateTime @default(now())
   updatedAt            DateTime @default(now()) @updatedAt
@@ -264,9 +264,9 @@ model Banner {
 // ----------------------
 model Video {
   id            String    @id @default(cuid())
-  title         String
-  youtube_url   String
-  thumbnail_url String?
+  title         String @db.VarChar(255)
+  youtube_url   String  @db.VarChar(512)
+  thumbnail_url String? @db.VarChar(512)
   order_number  Int       @default(0)
   is_active     Boolean   @default(true)
   start_date    DateTime?
@@ -287,8 +287,8 @@ model Video {
 // ----------------------
 model SustainabilityTag {
   id     String                     @id @default(cuid())
-  key    String                     @unique // "solar", "recycle", "localHiring"
-  name   String // ป้ายชื่อภาษาไทย
+  key    String                     @unique  @db.VarChar(64)// "solar", "recycle", "localHiring"
+  name   String @db.VarChar(255)
   stores SustainabilityTagOnStore[]
 
   @@index([key])
@@ -310,7 +310,7 @@ model SustainabilityTagOnStore {
 model Amenity {
   id     String           @id @default(cuid())
   key    String           @unique // "kidsZone", "freeWifi", "evCharger", "petFriendly"
-  name   String
+  name   String @db.VarChar(255)
   stores AmenityOnStore[]
 
   @@index([key])
@@ -332,11 +332,11 @@ model AmenityOnStore {
 model Event {
   id          String    @id @default(cuid())
   store_id    String
-  title       String
-  description String
+  title       String @db.VarChar(255)
+  description String @db.Text
   start_at    DateTime
   end_at      DateTime?
-  cover_image String?
+  cover_image String? @db.VarChar(512)
   is_active   Boolean   @default(true)
   created_at  DateTime  @default(now())
   updated_at  DateTime  @updatedAt
@@ -361,11 +361,11 @@ enum HomeRowKind {
 
 model HomeSettings {
   id            String   @id @default("singleton") // หน้าแรกมีชุดเดียว
-  hero_title    String
-  hero_subtitle String
+  hero_title    String  @db.VarChar(255)
+  hero_subtitle String  @db.VarChar(255)
   show_search   Boolean  @default(true)
 
-  missions_title String?
+  missions_title String? @db.VarChar(255)
   missions_items Json?      // ตัวอย่าง: ["คุณภาพ", "พลังงานสะอาด", "ช่วยชุมชน"]
 
   updated_at    DateTime @updatedAt
@@ -375,9 +375,9 @@ model HomeSettings {
 model HomeRow {
   id            String       @id @default(cuid())
   kind          HomeRowKind
-  title         String
-  cta_text      String?
-  cta_href      String?
+  title         String @db.VarChar(255)
+  cta_text      String? @db.VarChar(255)
+  cta_href      String? @db.VarChar(255)
   visible       Boolean      @default(true)
   order_number  Int          @default(0)
 
@@ -395,22 +395,21 @@ model HomeRow {
 // Global SEO & Footer
 // ----------------------
 model SiteSeo {
-  id               String   @id @default("global") // ชุดเดียว
-  meta_title       String?
-  meta_description String?
-  keywords         String?  // คั่นด้วยคอมม่า หรือจะเก็บเป็น Json ก็ได้
-  og_image         String?
-  jsonld           Json?    // ยัด structured data schema.org ได้
-
+  id               String   @id @default("global")
+  meta_title       String?  @db.VarChar(255)
+  meta_description String?  @db.VarChar(512)
+  keywords         String?  @db.VarChar(512)  // ✅ จำกัดสูงสุด 512
+  og_image         String?  @db.VarChar(512)
+  jsonld           Json?
   updated_at       DateTime @updatedAt
 }
 
 model SiteFooter {
   id          String   @id @default("singleton")
-  about_text  String?
-  address     String?
-  phone       String?
-  email       String?
+  about_text  String? @db.VarChar(255)
+  address     String? @db.VarChar(255)
+  phone       String? @db.VarChar(255)
+  email       String? @db.VarChar(255)
   socials     Json?    // {facebook, line, tiktok, instagram, youtube}
   links       Json?    // [{label, href}]
   locations   Json?    // [{label: "ร้านอาหาร", href: "https://maps..."}]
@@ -419,10 +418,10 @@ model SiteFooter {
 }
 model Homepage {
   id            String   @id @default("default") // singleton
-  hero_title    String?
-  hero_subtitle String?
+  hero_title    String? @db.VarChar(255)
+  hero_subtitle String? @db.VarChar(255)
   missions      Json?    // [{id,title,icon?}]  ← ลิสต์ bullet
-  missions_subtitle String? 
+  missions_subtitle String? @db.VarChar(255)
   rows          Json?    // future use: config แถวต่างๆ
   updated_at    DateTime @updatedAt
   created_at    DateTime @default(now())
@@ -432,7 +431,7 @@ model PageSeo {
   id          String  @id @default(cuid())
   path        String  @unique         @db.VarChar(255)
   title       String? @db.VarChar(255)
-  description String? @db.Text
+  description String? @db.VarChar(512)
   og_image    String? @db.VarChar(512)  // main
   og_images   Json?                      // secondary (array)
   jsonld      Json?
@@ -462,20 +461,15 @@ enum ScriptStrategy {
 
 model TrackingScript {
   id         String           @id @default(cuid())
-  provider   TrackingProvider // เดิม: String
-  // ถ้าเป็น GA4/GTM/TikTok/FB — แนะนำเก็บ "id" (เช่น G-XXXX, GTM-XXXX, FB-PIXEL-ID, TIKTOK-PIXEL-ID)
-  trackingId String?          @db.VarChar(64)
-  // สำหรับ custom snippet หรือเคสพิเศษยังคงรองรับ
-  script     String?          @db.Text
-
+  provider   TrackingProvider
+  trackingId String?          @db.VarChar(255)
+    script     String?          @db.Text
   placement  ScriptPlacement  @default(HEAD)
   strategy   ScriptStrategy   @default(afterInteractive)
   enabled    Boolean          @default(true)
-
   createdAt  DateTime         @default(now())
   updatedAt  DateTime         @updatedAt
 
-  // ถ้าต้องการบังคับว่า “provider ละ 1 รายการที่ active” ให้ใช้ partial unique index แยกในแอป
   @@index([provider, enabled])
 }
 model ImageRating {
@@ -528,9 +522,9 @@ model SiteConfig {
 }
 model SiteBrand {
   id             String   @id @default("singleton")
-  brandName      String?  // ชื่อแบรนด์หลัก เช่น "ครัวคุณจี๊ด"
-  themeColor     String?  // hex เช่น #000000
-  manifestUrl    String?  // /site.webmanifest หรือ URL
+  brandName      String?  @db.VarChar(255)
+  themeColor     String?  @db.VarChar(16) // hex เช่น #000000
+  manifestUrl    String?  @db.VarChar(255)
   // favicon & apple-icon
   icon16         String?  // /favicon/favicon-16x16.png
   icon32         String?  // /favicon/favicon-32x32.png

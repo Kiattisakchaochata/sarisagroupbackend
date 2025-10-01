@@ -93,8 +93,10 @@ app.options('*', cors(corsOptions));
 /** -------------- จบส่วนที่ปรับ -------------- */
 
 app.use(cookieParser());
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+
+// ✅ เพิ่ม limit body text/json 128kb
+app.use(express.json({ limit: '128kb' }));
+app.use(express.urlencoded({ extended: true, limit: '128kb' }));
 
 // ✅ Health
 app.get('/api/health', (_req, res) => res.json({ ok: true }));

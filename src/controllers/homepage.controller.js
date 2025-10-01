@@ -1,6 +1,25 @@
 // backend/src/controllers/homepage.controller.js
 import prisma from '../config/prisma.config.js'
 
+// ===== Length limits & helpers (วางต่อจาก import) =====
+const HOMEPAGE_LIMITS = {
+  hero_title: 255,
+  hero_subtitle: 255,
+  missions_subtitle: 255,
+};
+
+function safeCut(str, max) {
+  if (str == null) return str;
+  const arr = [...String(str)];
+  return arr.length > max ? arr.slice(0, max).join('') : str;
+}
+
+function pushIfTooLong(label, val, max, errors) {
+  if (val === undefined || val === null) return;
+  const len = [...String(val)].length;
+  if (len > max) errors.push(`${label} ยาว ${len} ตัวอักษร (เกิน ${max})`);
+}
+
 /** Public: ใช้หน้าเว็บเรียก */
 // ---------- Public: หน้าเว็บเรียก ----------
 export const getHomepagePublic = async (_req, res, next) => {
@@ -41,8 +60,8 @@ export const getHomepagePublic = async (_req, res, next) => {
         subtitle: h?.hero_subtitle ?? null,
         showSearch: false,
       },
-      missions: items,                    // array พร้อมใช้งาน
-      missionsSubtitle: missionSub,       // ส่งออกให้หน้าเว็บ
+      missions: items,
+      missionsSubtitle: missionSub,
       rows: Array.isArray(h?.rows) ? h.rows : [],
       storesMini,
       updatedAt: h?.updated_at?.toISOString?.() ?? new Date().toISOString(),
@@ -81,19 +100,32 @@ export const updateHomepageAdmin = async (req, res, next) => {
     // ✅ เก็บเป็น JSON เดียวในคอลัมน์ missions
     const missionsJson = { subtitle: subtitle || null, items }
 
+    // ===== Sanitize lengths (auto-truncate) — วางบล็อกนี้ก่อน upsert =====
+    {
+      if (typeof hero_title === 'string') {
+        req.body.hero_title = safeCut(hero_title, HOMEPAGE_LIMITS.hero_title);
+      }
+      if (typeof hero_subtitle === 'string') {
+        req.body.hero_subtitle = safeCut(hero_subtitle, HOMEPAGE_LIMITS.hero_subtitle);
+      }
+      if (typeof subtitle === 'string') {
+        subtitle = safeCut(subtitle, HOMEPAGE_LIMITS.missions_subtitle);
+      }
+    }
+
     const updated = await prisma.homepage.upsert({
       where: { id: 'default' },
       create: {
         id: 'default',
-        hero_title: hero_title ?? null,
-        hero_subtitle: hero_subtitle ?? null,
-        missions: missionsJson,
+        hero_title: req.body.hero_title ?? null,
+        hero_subtitle: req.body.hero_subtitle ?? null,
+        missions: { ...missionsJson, subtitle },
         rows: rows ?? [],
       },
       update: {
-        hero_title: hero_title ?? null,
-        hero_subtitle: hero_subtitle ?? null,
-        missions: missionsJson,
+        hero_title: req.body.hero_title ?? null,
+        hero_subtitle: req.body.hero_subtitle ?? null,
+        missions: { ...missionsJson, subtitle },
         rows: rows ?? [],
       },
     })
