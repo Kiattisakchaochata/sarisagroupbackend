@@ -1,3 +1,4 @@
+// src/controllers/seo.controller.js
 import { PrismaClient } from '@prisma/client';
 const prisma = new PrismaClient();
 
@@ -15,8 +16,16 @@ function normPath(p) {
   return s;
 }
 
-/* ====== เพิ่มคอนสแตนต์และ util สำหรับ keywords ====== */
-const KEYWORDS_MAX = 512; // ✅ ตามที่ตกลงกัน
+/* ====== ขีดจำกัดตาม Prisma schema ====== */
+const LIMITS = {
+  PATH: 255,
+  TITLE: 255,
+  DESC: 512,
+  OG: 512,
+  KEYWORDS: 512,
+};
+
+/* ====== keywords utils ====== */
 function normalizeKeywords(v) {
   if (!v) return '';
   return String(v)
@@ -26,14 +35,14 @@ function normalizeKeywords(v) {
     .join(', ');
 }
 
-/** (ยังคงไว้เผื่อ reuse อื่น ๆ ถ้าต้องการ) */
+/* เผื่อจะใช้ clamp ในอนาคต */
 function clamp(str, max) {
   if (!str) return '';
   return String(str).slice(0, max);
 }
 
-// ----- Global (SiteSeo) -----
-export async function getSiteSeo(req, res) {
+/* ====== Admin: Global (SiteSeo) ====== */
+export async function getSiteSeo(_req, res) {
   const site = await prisma.siteSeo.findUnique({ where: { id: 'global' } });
   res.json(site ?? {});
 }
@@ -43,21 +52,33 @@ export async function upsertSiteSeo(req, res) {
     const { meta_title, meta_description, keywords, og_image, jsonld } = req.body ?? {};
     const jsonldParsed = safeParseJson(jsonld) || {};
 
-    // ✅ ทำให้ keywords เป็นรูปแบบมาตรฐานก่อน
+    // normalize + validate keywords
     const normalized = normalizeKeywords(keywords);
-
-    // ✅ ป้องกันความยาวเกิน 512 ตัวอักษร — ตอบ 400 ทันที (ชัดเจนกว่าปล่อยให้ชน DB)
-    if (normalized && normalized.length > KEYWORDS_MAX) {
+    if (normalized && normalized.length > LIMITS.KEYWORDS) {
       return res.status(400).json({
         error: 'KEYWORDS_TOO_LONG',
-        message: `keywords ยาวเกินกำหนด (สูงสุด ${KEYWORDS_MAX} ตัวอักษร รวมจุลภาคและช่องว่าง)`,
+        message: `keywords ยาวเกินกำหนด (สูงสุด ${LIMITS.KEYWORDS} ตัวอักษร รวมจุลภาคและช่องว่าง)`,
       });
     }
 
-    // ✅ sync ลง jsonld ด้วย (ถ้ามี)
+    // sync keywords ลง JSON-LD ถ้ามี
     if (typeof jsonldParsed === 'object' && jsonldParsed) {
       if (normalized) jsonldParsed.keywords = normalized;
-      // ไม่แก้ไขฟิลด์อื่น ๆ
+    }
+
+    // ความยาวฟิลด์อื่น (กัน dev เผลอส่งเกิน schema)
+    const errs = [];
+    if (meta_title && String(meta_title).length > LIMITS.TITLE) {
+      errs.push(`meta_title เกิน ${LIMITS.TITLE}`);
+    }
+    if (meta_description && String(meta_description).length > LIMITS.DESC) {
+      errs.push(`meta_description เกิน ${LIMITS.DESC}`);
+    }
+    if (og_image && String(og_image).length > LIMITS.OG) {
+      errs.push(`og_image เกิน ${LIMITS.OG}`);
+    }
+    if (errs.length) {
+      return res.status(400).json({ error: 'VALIDATION_ERROR', details: errs });
     }
 
     const data = await prisma.siteSeo.upsert({
@@ -67,20 +88,30 @@ export async function upsertSiteSeo(req, res) {
     });
     res.json(data);
   } catch (err) {
-    // ดัก Prisma P2000 เผื่อสคีมายังเป็นความยาวสั้นกว่า (กันเว็บล่ม)
-    if (err?.code === 'P2000' && err?.meta?.column_name === 'keywords') {
-      return res.status(400).json({
-        error: 'KEYWORDS_TOO_LONG',
-        message: `keywords ยาวเกินกำหนด (สูงสุด ${KEYWORDS_MAX} ตัวอักษร รวมจุลภาคและช่องว่าง)`,
-      });
+    // ดัก Prisma P2000 แบบเจาะจงคอลัมน์
+    if (err?.code === 'P2000') {
+      const col = err?.meta?.column_name || '';
+      const map = {
+        keywords: LIMITS.KEYWORDS,
+        meta_title: LIMITS.TITLE,
+        meta_description: LIMITS.DESC,
+        og_image: LIMITS.OG,
+      };
+      if (map[col]) {
+        return res.status(400).json({
+          error: 'FIELD_TOO_LONG',
+          column: col,
+          limit: map[col],
+          message: `${col} ยาวเกินกำหนด (สูงสุด ${map[col]})`,
+        });
+      }
     }
-    // อื่น ๆ ส่ง 500 กลับไป
     return res.status(500).json({ error: 'INTERNAL_ERROR', message: err?.message || 'Unexpected error' });
   }
 }
 
-// ----- Per Page (PageSeo) -----
-export async function listPageSeo(req, res) {
+/* ====== Admin: Per Page (PageSeo) ====== */
+export async function listPageSeo(_req, res) {
   const pages = await prisma.pageSeo.findMany({ orderBy: { updated_at: 'desc' }, take: 200 });
   res.json({ pages });
 }
@@ -94,17 +125,49 @@ export async function getPageSeoByPath(req, res) {
 }
 
 export async function upsertPageSeo(req, res) {
-  const { title, description, og_image, jsonld, noindex } = req.body ?? {};
-  const path = normPath(req.body?.path);
-  if (!path) return res.status(400).json({ message: 'path is required' });
+  try {
+    const { title, description, og_image, jsonld, noindex } = req.body ?? {};
+    const path = normPath(req.body?.path);
+    if (!path) return res.status(400).json({ message: 'path is required' });
 
-  const jsonldParsed = safeParseJson(jsonld);
-  const data = await prisma.pageSeo.upsert({
-    where: { path },
-    create: { path, title, description, og_image, jsonld: jsonldParsed, noindex: !!noindex },
-    update: {       title, description, og_image, jsonld: jsonldParsed, noindex: !!noindex },
-  });
-  res.json(data);
+    // validate length ก่อนชน DB
+    const errs = [];
+    if (path.length > LIMITS.PATH) errs.push(`path เกิน ${LIMITS.PATH}`);
+    if (title && String(title).length > LIMITS.TITLE) errs.push(`title เกิน ${LIMITS.TITLE}`);
+    if (description && String(description).length > LIMITS.DESC) errs.push(`description เกิน ${LIMITS.DESC}`);
+    if (og_image && String(og_image).length > LIMITS.OG) errs.push(`og_image เกิน ${LIMITS.OG}`);
+    if (errs.length) {
+      return res.status(400).json({ error: 'VALIDATION_ERROR', details: errs });
+    }
+
+    const jsonldParsed = safeParseJson(jsonld);
+
+    const data = await prisma.pageSeo.upsert({
+      where: { path },
+      create: { path, title, description, og_image, jsonld: jsonldParsed, noindex: !!noindex },
+      update: {       title, description, og_image, jsonld: jsonldParsed, noindex: !!noindex },
+    });
+    res.json(data);
+  } catch (err) {
+    if (err?.code === 'P2000') {
+      const col = err?.meta?.column_name || '';
+      const map = {
+        path: LIMITS.PATH,
+        title: LIMITS.TITLE,
+        description: LIMITS.DESC,
+        og_image: LIMITS.OG,
+      };
+      if (map[col]) {
+        return res.status(400).json({
+          error: 'FIELD_TOO_LONG',
+          column: col,
+          limit: map[col],
+          message: `${col} ยาวเกินกำหนด (สูงสุด ${map[col]})`,
+        });
+      }
+    }
+    return res.status(500).json({ error: 'INTERNAL_ERROR', message: err?.message || 'Unexpected error' });
+  }
 }
 
 export async function deletePageSeo(req, res) {
@@ -115,15 +178,16 @@ export async function deletePageSeo(req, res) {
 }
 
 /* ---------- Public SEO API (read-only, no auth) ---------- */
+/* ✅ ปรับคีย์ให้ตรงกับที่ FE คาด (meta_title, meta_description, og_image) */
 export async function getSitePublic() {
   const site = await prisma.siteSeo.findUnique({ where: { id: 'global' } });
   if (!site) return {};
   return {
-    title: site.meta_title,
-    description: site.meta_description,
-    keywords: site.keywords,
-    ogImage: site.og_image,
-    jsonld: site.jsonld,
+    meta_title: site.meta_title || null,
+    meta_description: site.meta_description || null,
+    keywords: site.keywords || null,
+    og_image: site.og_image || null,
+    jsonld: site.jsonld || null,
   };
 }
 
@@ -132,10 +196,10 @@ export async function getPagePublic(path) {
   const page = await prisma.pageSeo.findUnique({ where: { path: norm } });
   if (!page) return null;
   return {
-    title: page.title,
-    description: page.description,
-    ogImage: page.og_image,
-    jsonld: page.jsonld,
-    noindex: page.noindex,
+    title: page.title || null,
+    description: page.description || null,
+    og_image: page.og_image || null,
+    jsonld: page.jsonld || null,
+    noindex: !!page.noindex,
   };
 }
